@@ -1,0 +1,17 @@
+# compiled programs
+*.elf
+*.o
+*.hex
+*.bin
+*.dump
+# simulation output
+obj_dir/
+build/
+*.vcd
+*.fst
+*.log
+# python
+__pycache__/
+# vivado
+.Xil/
+*.jou
