@@ -35,6 +35,16 @@ package rv_pkg;
     ALU_AND
   } alu_op_t;
 
+  // Immediate formats. The decoder tells the immediate generator which one
+  // the current instruction uses.
+  typedef enum logic [2:0] {
+    IMM_I,   // addi, loads, jalr
+    IMM_S,   // stores
+    IMM_B,   // branches
+    IMM_U,   // lui, auipc
+    IMM_J    // jal
+  } imm_type_t;
+
   /* verilator lint_on UNUSEDPARAM */
 
 endpackage
