@@ -4,6 +4,8 @@
 *.hex
 *.bin
 *.dump
+# ...except the memory testbench's small program image
+!tb/mem_init.hex
 # simulation output
 obj_dir/
 build/
@@ -15,3 +17,7 @@ __pycache__/
 # vivado
 .Xil/
 *.jou
+# downloaded test suites (make deps) and their build output
+tests/riscv-tests/
+tests/coremark/
+tests/build/

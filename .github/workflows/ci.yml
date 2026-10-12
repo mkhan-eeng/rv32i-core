@@ -1,0 +1,49 @@
+# Runs on every push: lint, unit tests, then real programs on the pipelined
+# core, each compared instruction by instruction against Spike.
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      CROSS: riscv64-unknown-elf-
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Verilator and the RISC-V compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y verilator gcc-riscv64-unknown-elf \
+            device-tree-compiler libboost-regex-dev libboost-system-dev
+
+      - name: Cache Spike
+        id: spike-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/spike
+          key: spike-${{ runner.os }}-v1
+
+      - name: Build Spike
+        if: steps.spike-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/riscv-software-src/riscv-isa-sim
+          cd riscv-isa-sim && mkdir build && cd build
+          ../configure --prefix=$HOME/spike
+          make -j4 && make install
+
+      - name: Download riscv-tests and CoreMark
+        run: make deps
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests
+        run: make test
+
+      - name: Programs vs Spike (pipelined core)
+        run: make hello isa random N=200 SPIKE=$HOME/spike/bin/spike
+
+      - name: Programs vs Spike (single-cycle core)
+        run: make hello isa random N=100 CORE=single SPIKE=$HOME/spike/bin/spike
