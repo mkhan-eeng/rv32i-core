@@ -17,7 +17,9 @@
 ## Cores
 - One clock, synchronous active-high reset.
 - `core` (single-cycle): fetch, decode, execute, memory and write-back in one cycle; memories read combinationally.
-- `core_pipe` (5-stage): IF, ID, EX, MEM, WB.
+- `core_pipe` (5-stage): IF, ID, EX, MEM, WB, with synchronous memories (data one clock after the address, like block RAM / SRAM).
+  - Instruction memory address = next PC; the instruction for pc_f is valid while pc_f is in IF.
+  - Data memory address, store data and byte enables come from EX; stores are written at the end of EX; load data arrives in MEM.
   - Forwarding from EX/MEM and MEM/WB into EX; register-file bypass from WB into ID.
   - Load-use hazard: one stall cycle.
   - Branches and jumps resolve in EX. The next PC is guessed in IF; a wrong guess flushes IF/ID and ID/EX.

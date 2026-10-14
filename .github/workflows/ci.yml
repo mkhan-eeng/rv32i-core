@@ -47,3 +47,11 @@ jobs:
 
       - name: Programs vs Spike (single-cycle core)
         run: make hello isa random N=100 CORE=single SPIKE=$HOME/spike/bin/spike
+
+      - name: Install sv2v
+        run: |
+          curl -sSL -o sv2v.zip https://github.com/zachjs/sv2v/releases/download/v0.0.13/sv2v-Linux.zip
+          unzip -q sv2v.zip && echo "$PWD/sv2v-Linux" >> $GITHUB_PATH
+
+      - name: DE2-115 board design running CoreMark
+        run: make fpga_sim

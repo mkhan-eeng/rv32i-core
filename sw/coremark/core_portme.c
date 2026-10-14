@@ -61,4 +61,21 @@ void portable_init(core_portable *p, int *argc, char *argv[])
     p->portable_id = 1;
 }
 
-void portable_fini(core_portable *p) { p->portable_id = 0; }
+/* After the run, write the score (iterations per second x 100) in decimal
+   to the board's 7-segment display register, e.g. 56.27 shows as 00005627.
+   In simulation the write goes nowhere. */
+#define DISPLAY (*(volatile ee_u32 *)0x10000010)
+
+void portable_fini(core_portable *p)
+{
+    p->portable_id = 0;
+    unsigned long long ticks = (unsigned long long)(stop_time_val - start_time_val);
+    unsigned long long iters = (unsigned long long)seed4_volatile;
+    ee_u32 score = ticks ? (ee_u32)(iters * EE_TICKS_PER_SEC * 100ULL / ticks) : 0;
+    ee_u32 bcd = 0;
+    for (int i = 0; i < 8; i++) {
+        bcd |= (score % 10) << (4 * i);
+        score /= 10;
+    }
+    DISPLAY = bcd;
+}

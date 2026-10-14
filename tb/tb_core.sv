@@ -40,10 +40,17 @@ module tb_core #(
 `endif
 
   // Instruction and data memories, both loaded with the same program image.
-  mem imem (.clk(clk), .addr(imem_addr), .rdata(imem_rdata),
-            .we(1'b0), .be(4'b0000), .wdata(32'b0));
-  mem dmem (.clk(clk), .addr(dmem_addr), .rdata(ram_rdata),
-            .we(dmem_we), .be(dmem_be), .wdata(dmem_wdata));
+  // The pipelined core uses synchronous memories (data one cycle after the address).
+`ifdef PIPELINE
+  localparam bit SYNC = 1'b1;
+`else
+  localparam bit SYNC = 1'b0;
+`endif
+
+  mem #(.SYNC_READ(SYNC)) imem (.clk(clk), .addr(imem_addr), .rdata(imem_rdata),
+                                .we(1'b0), .be(4'b0000), .wdata(32'b0));
+  mem #(.SYNC_READ(SYNC)) dmem (.clk(clk), .addr(dmem_addr), .rdata(ram_rdata),
+                                .we(dmem_we), .be(dmem_be), .wdata(dmem_wdata));
 
   // ---------------- memory-mapped devices ----------------
   localparam logic [31:0] UART_DATA   = 32'h1000_0000;
@@ -59,7 +66,16 @@ module tb_core #(
       default:     mmio_rdata = 32'b0;
     endcase
   end
-  assign dmem_rdata = (dmem_addr[31:28] == 4'h1) ? mmio_rdata : ram_rdata;
+  // Device reads follow the same timing as the memory.
+  logic        is_mmio, is_mmio_q;
+  logic [31:0] mmio_rdata_q;
+  assign is_mmio = (dmem_addr[31:28] == 4'h1);
+  always_ff @(posedge clk) begin
+    is_mmio_q    <= is_mmio;
+    mmio_rdata_q <= mmio_rdata;
+  end
+  assign dmem_rdata = SYNC ? (is_mmio_q ? mmio_rdata_q : ram_rdata)
+                           : (is_mmio   ? mmio_rdata   : ram_rdata);
 
   initial forever #5 clk = ~clk;
 
@@ -145,5 +161,26 @@ module tb_core #(
     if (cycles >= max_cycles)
       finish_run($sformatf("FAIL: timeout after %0d cycles, pc 0x%h", max_cycles, ret_pc));
   end
+
+`ifdef PIPELINE
+  // +pipeview=<file>: one line per cycle with the PC in each stage, for
+  // drawing pipeline diagrams (scripts/pipeview.py). "-" means a bubble.
+  int pv = 0;
+  initial begin
+    string pvfile;
+    if ($value$plusargs("pipeview=%s", pvfile)) pv = $fopen(pvfile, "w");
+  end
+  function automatic string stg(logic v, logic [31:0] pc);
+    return v ? $sformatf("%h", pc) : "-";
+  endfunction
+  initial forever begin
+    @(negedge clk);
+    if (pv != 0 && !rst)
+      $fdisplay(pv, "%0d %h %s %s %s %s %0d %0d", cycles, dut.pc_f,
+                stg(dut.ifid.valid, dut.ifid.pc), stg(dut.idex.valid, dut.idex.pc),
+                stg(dut.exmem.valid, dut.exmem.pc), stg(dut.memwb.valid, dut.memwb.pc),
+                perf_stall, perf_flush);
+  end
+`endif
 
 endmodule

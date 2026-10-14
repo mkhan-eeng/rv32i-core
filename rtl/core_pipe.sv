@@ -3,6 +3,13 @@
 // Five instructions are in flight at once, one per stage. Same ports and
 // same behaviour as the single-cycle core, so the same tests run on both.
 //
+// Memories are SYNCHRONOUS, like FPGA block RAM and ASIC SRAM: the address
+// goes in on one clock edge and the data comes out after it.
+//   - Instruction memory gets the address of the NEXT PC, so the instruction
+//     for pc_f is ready in the cycle pc_f is in IF.
+//   - Data memory gets its address (and store data) from EX, so load data is
+//     ready in MEM, and stores are written at the end of EX.
+//
 // Hazards:
 //   - Data:    results are forwarded from MEM and WB back to EX. A load
 //              followed by an instruction that uses its result stalls for
@@ -77,6 +84,7 @@ module core_pipe
     logic [31:0] alu_y;         // result, or the memory address for loads/stores
     logic [31:0] result;        // what gets written back if it isn't a load
     logic [31:0] store_data;
+    logic        misaligned;
   } ex_mem_t;
 
   typedef struct packed {
@@ -102,7 +110,7 @@ module core_pipe
 
   // ================= IF: fetch and guess the next PC =================
 
-  logic [31:0] pc_f, pred_next_f;
+  logic [31:0] pc_f, pc_f_next, pred_next_f;
 
   localparam int NB = (BTB_ENTRIES > 0) ? BTB_ENTRIES : 1;
   localparam int IB = (NB > 1) ? $clog2(NB) : 1;
@@ -119,13 +127,18 @@ module core_pipe
   assign pred_taken_f = (BTB_ENTRIES > 0) && btb_valid[idx_f] &&
                         (btb_pc[idx_f] == pc_f) && btb_ctr[idx_f][1];
   assign pred_next_f  = pred_taken_f ? btb_target[idx_f] : pc_f + 32'd4;
-  assign imem_addr    = pc_f;
-
-  always_ff @(posedge clk) begin
-    if (rst)           pc_f <= RESET_PC;
-    else if (redirect) pc_f <= redirect_pc;
-    else if (!stall)   pc_f <= pred_next_f;
+  // Where the PC goes next. The same value is sent to the instruction
+  // memory, so its output after this clock edge is the instruction at pc_f.
+  always_comb begin
+    if (rst)           pc_f_next = RESET_PC;
+    else if (redirect) pc_f_next = redirect_pc;
+    else if (stall)    pc_f_next = pc_f;
+    else               pc_f_next = pred_next_f;
   end
+
+  assign imem_addr = pc_f_next;
+
+  always_ff @(posedge clk) pc_f <= pc_f_next;
 
   always_ff @(posedge clk) begin
     if (rst || redirect) ifid <= '0;                        // flush
@@ -255,27 +268,44 @@ module core_pipe
     end
   end
 
+  // Data memory access starts here: address, store data and byte enables
+  // go out now; the store is written at the end of this cycle, and load
+  // data comes back in MEM.
+  logic misaligned_e;
+  logic [31:0] unused_load_e;
+
+  lsu u_lsu_store (
+    .funct3(idex.inst[14:12]), .addr_lo(alu_y[1:0]),
+    .is_load(idex.valid && idex.ctrl.mem_read), .is_store(idex.valid && idex.ctrl.mem_write),
+    .store_data(fwd2), .mem_wdata(dmem_wdata), .mem_be(dmem_be),
+    .mem_rdata(32'b0), .load_data(unused_load_e), .misaligned(misaligned_e));
+
+  assign dmem_addr = alu_y;
+  assign dmem_we   = idex.valid && idex.ctrl.mem_write && !misaligned_e;
+
   always_ff @(posedge clk) begin
     if (rst) exmem <= '0;
     else exmem <= '{valid: idex.valid, pc: idex.pc, inst: idex.inst, ctrl: idex.ctrl, rd: idex.rd,
                     alu_y: alu_y,
                     result: (idex.ctrl.wb_sel == WB_PC4) ? pc_plus4_e : alu_y,
-                    store_data: fwd2};
+                    store_data: fwd2, misaligned: misaligned_e};
   end
 
-  // ================= MEM: loads and stores =================
+  // ================= MEM: load data arrives =================
 
   logic [31:0] load_data;
   logic        misaligned_m;
+  logic [31:0] unused_wdata_m;
+  logic [3:0]  unused_be_m;
+  logic        unused_misaligned_m;
 
-  lsu u_lsu (
+  assign misaligned_m = exmem.misaligned;
+
+  lsu u_lsu_load (
     .funct3(exmem.inst[14:12]), .addr_lo(exmem.alu_y[1:0]),
-    .is_load(exmem.valid && exmem.ctrl.mem_read), .is_store(exmem.valid && exmem.ctrl.mem_write),
-    .store_data(exmem.store_data), .mem_wdata(dmem_wdata), .mem_be(dmem_be),
-    .mem_rdata(dmem_rdata), .load_data(load_data), .misaligned(misaligned_m));
-
-  assign dmem_addr = exmem.alu_y;
-  assign dmem_we   = exmem.valid && exmem.ctrl.mem_write && !misaligned_m;
+    .is_load(1'b0), .is_store(1'b0),
+    .store_data(32'b0), .mem_wdata(unused_wdata_m), .mem_be(unused_be_m),
+    .mem_rdata(dmem_rdata), .load_data(load_data), .misaligned(unused_misaligned_m));
 
   always_ff @(posedge clk) begin
     if (rst) memwb <= '0;

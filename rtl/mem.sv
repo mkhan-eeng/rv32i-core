@@ -1,5 +1,7 @@
 // Simulation memory: SIZE_BYTES of RAM starting at BASE.
-// Reads are combinational (needed by the single-cycle core).
+// SYNC_READ = 0: reads are combinational (the single-cycle core needs this).
+// SYNC_READ = 1: reads come out after the clock edge, like FPGA block RAM
+//                and ASIC SRAM (the pipelined core uses this).
 // Writes happen on the rising clock edge, one enable per byte.
 //
 // At startup it loads the program given on the command line:
@@ -8,7 +10,8 @@
 // Addresses outside the RAM read as 0 and writes to them are ignored.
 module mem #(
   parameter int unsigned SIZE_BYTES = 32768,
-  parameter logic [31:0] BASE       = 32'h8000_0000
+  parameter logic [31:0] BASE       = 32'h8000_0000,
+  parameter bit          SYNC_READ  = 1'b0
 ) (
   input  logic        clk,
   input  logic [31:0] addr,
@@ -38,7 +41,12 @@ module mem #(
     if ($value$plusargs("hex=%s", hexfile)) $readmemh(hexfile, ram);
   end
 
-  assign rdata = in_range ? ram[index] : 32'b0;
+  logic [31:0] rdata_now, rdata_q;
+  assign rdata_now = in_range ? ram[index] : 32'b0;
+
+  always_ff @(posedge clk) rdata_q <= rdata_now;    // registered copy for SYNC_READ
+
+  assign rdata = SYNC_READ ? rdata_q : rdata_now;
 
   always_ff @(posedge clk) begin
     if (we && in_range) begin

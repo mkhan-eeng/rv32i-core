@@ -6,6 +6,8 @@
 *.dump
 # ...except the memory testbench's small program image
 !tb/mem_init.hex
+# ...and the FPGA's memory images, so Quartus can compile without the toolchain
+!fpga/de2_115/mem/*.hex
 # simulation output
 obj_dir/
 build/
