@@ -7,7 +7,7 @@ set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 # rv32i_de2_115.v is generated from the SystemVerilog in rtl/ by `make fpga` (sv2v).
 set_global_assignment -name VERILOG_FILE rv32i_de2_115.v
 # Verilog-2005 for $clog2 (works in Quartus II 13 and every Quartus Prime)
-set_global_assignment -name VERILOG_INPUT_VERSION VERILOG_2005
+set_global_assignment -name VERILOG_INPUT_VERSION SYSTEMVERILOG_2005
 set_global_assignment -name SDC_FILE de2_115.sdc
 set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS_WEAK_PULLUP "AS INPUT TRI-STATED"
